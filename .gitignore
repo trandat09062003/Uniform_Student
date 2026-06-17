@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+runs/
+data/violations/*.jpg
+models/*.pt
+models/*.engine
+dataset/
+*.mp4

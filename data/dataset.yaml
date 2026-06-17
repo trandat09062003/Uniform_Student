@@ -1,0 +1,13 @@
+# Cập nhật `path` trỏ tới thư mục dataset (Roboflow export YOLOv8)
+path: ../dataset
+train: images/train
+val: images/val
+
+names:
+  0: ao_trang
+  1: quan_xanh
+  2: khan_quang
+  3: bang_ten
+  4: hoc_sinh
+  5: quan_sai_mau
+  6: ao_sai_mau

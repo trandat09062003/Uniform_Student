@@ -1,0 +1,22 @@
+# Cấu hình classes và quy tắc vi phạm
+classes:
+  - ao_trang
+  - quan_xanh
+  - khan_quang
+  - bang_ten
+  - hoc_sinh
+  - quan_sai_mau
+  - ao_sai_mau
+
+# Vùng thân trên (tỷ lệ bbox hoc_sinh) để kiểm tra khăn quàng / bảng tên
+upper_body_ratio: 0.55
+
+# IoU tối thiểu để coi một item nằm "trên" học sinh
+overlap_iou_threshold: 0.1
+
+# Số frame liên tiếp phát hiện vi phạm trước khi gửi mail (giảm false positive)
+violation_confirm_frames: 5
+
+# Lưu ảnh vi phạm local
+save_violation_images: true
+violations_dir: data/violations
