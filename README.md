@@ -1,168 +1,180 @@
-# True Form Student - AI Uniform & Attendance Detection System
+# True Form Student - Hệ Thống Nhận Diện Đồng Phục & Điểm Danh Học Sinh
 
-Hệ thống AI thông minh thời gian thực (Real-time Edge AI) nhận diện đồng phục học sinh (áo trắng, quần xanh, khăn quàng đỏ, bảng tên) từ Camera, tự động kiểm tra vi phạm nội quy và đồng bộ điểm danh sĩ số học sinh lên **Bảng điều khiển IoT OhStem** qua giao thức MQTT.
+Hệ thống Edge AI thời gian thực nhận diện đồng phục học sinh (áo trắng, quần xanh, khăn quàng đỏ, bảng tên) từ Webcam máy tính hoặc Camera ngoài, tự động bám vết (tracking) từng học sinh để kiểm tra vi phạm nội quy và đồng bộ sĩ số điểm danh lên **OhStem IoT Dashboard** qua giao thức MQTT.
 
 ---
 
-## 📸 Sơ Đồ Kiến Trúc
+## Sơ Đồ Hoạt Động
 
 ```text
-Camera (Webcam / RTSP / Video File)
+Camera (Webcam Laptop / Cam Ngoài USB 1080x1920 / RTSP / Video)
       ↓
-  Edge AI (YOLO11m - Medium)
+  YOLO11m + ByteTrack (Bám vết ID từng học sinh)
       ↓
-┌───────────────────────────────┐
-│     Hệ Thống Xử Lý Logic      │
-├───────────────┬───────────────┤
-│ Điểm danh     │ Vi phạm       │
-│ (Đếm sĩ số)   │ (Thiếu đồng   │
-│               │  phục,...)    │
-└───────┬───────┘───────┬───────┘
-        ↓               ↓
-┌───────────────┐┌───────────────┐
-│  OhStem IoT   ││  Lưu trữ ảnh  │
-│ (MQTT Broker) ││   cảnh báo    │
-│  Dashboard    ││    local      │
-└───────────────┘└───────────────┘
+┌────────────────────────────────────────┐
+│   Đánh Giá Theo Chuỗi Thời Gian        │
+│   (Temporal Voting + Distance Gate)    │
+├───────────────────┬────────────────────┤
+│ Điểm danh sĩ số   │ Kiểm tra đồng phục │
+│ (OhStem MQTT)     │ (Lưu ảnh vi phạm)  │
+└───────────────────┴────────────────────┘
 ```
 
 ---
 
-## ✨ Các Tính Năng Nổi Bật
+## Tính Năng Chính
 
-1. **Nhận diện YOLO11m Mới Nhất**: Sử dụng mô hình YOLO11 phiên bản Medium (`yolo11m.pt`) tối ưu về độ chính xác và khả năng bám vết, hạn chế tối đa hiện tượng nhảy ID đối tượng.
-2. **Điểm Danh Thời Gian Thực (OhStem IoT)**: Tự động đếm sĩ số học sinh xuất hiện trên màn hình và gửi dữ liệu lên Dashboard của OhStem.
-3. **Phát Hiện Vi Phạm Thông Minh**:
-   * Phát hiện mặc quần sai màu, áo sai màu.
-   * Phát hiện thiếu khăn quàng đỏ, thiếu bảng tên (chấp nhận cả nhãn `bang_ten` và `the_ten`).
-   * Sử dụng cơ chế **Frame Debounce** (xác nhận vi phạm sau 5 khung hình liên tiếp) để tránh nhiễu và báo động sai.
-4. **Trực Quan Hóa Đẹp Mắt (Unicode Tiếng Việt)**:
-   * Vẽ nhãn trực tiếp bằng tiếng Việt có dấu (`áo trắng`, `bảng tên`, `học sinh`...) nhờ tích hợp công nghệ Pillow.
-   * Khi học sinh vi phạm, chỉ hiển thị nhãn đỏ xếp chồng khoa học ngay trên đầu học sinh (không vẽ viền đỏ bao quanh cơ thể để tránh rối mắt).
-5. **Bộ Công Cụ Kiểm Thử Tiện Lợi**:
-   * Kiểm thử nhanh hình ảnh riêng biệt, hiển thị trực quan và lưu trữ kết quả.
-   * Kiểm thử video độc lập để tối ưu hóa góc đặt camera.
+1. **Nhận diện YOLO11m & Bám vết ByteTrack**:
+   * Gán ID cố định (`#1`, `#2`, ...) cho từng học sinh khi di chuyển qua camera.
+   * Lọc ngưỡng tin cậy riêng cho từng loại đối tượng (`hoc_sinh >= 0.60`, `ao_trang`/`quan_xanh >= 0.50`, `the_ten`/`khan_quang >= 0.35`) giúp hạn chế nhận nhầm phông nền.
+2. **Đánh giá theo chuỗi thời gian (Temporal Voting)**:
+   * Tích lũy kết quả qua nhiều khung hình liên tiếp thay vì kết luận vội ở 1 frame, tránh báo sai khi học sinh xoay người hoặc bị che khuất tạm thời.
+   * Hỗ trợ cổng lọc khoảng cách (`MIN_STUDENT_HEIGHT`), chỉ kiểm tra khi học sinh đi vào vùng đủ gần camera.
+   * Tùy chỉnh linh hoạt quy định khăn quàng (`REQUIRE_SCARF=true` cho Cấp 1/2, `false` cho Cấp 3).
+3. **Hỗ trợ cả Webcam Máy Tính & Camera Ngoài (`1080x1920`)**:
+   * Hỗ trợ quét cổng camera tự động, ép độ phân giải qua DirectShow trên Windows và tự động co giãn cửa sổ hiển thị (`WINDOW_NORMAL`) để không bị tràn màn hình.
+4. **Điểm danh OhStem IoT (MQTT)**:
+   * Tự động đếm sĩ số và gửi lên feed cấu hình trên OhStem theo chu kỳ 3 giây hoặc khi sĩ số thay đổi.
+5. **Hiển thị Tiếng Việt Unicode**:
+   * Vẽ nhãn và huy hiệu trạng thái (`ĐỦ ĐỒNG PHỤC`, `VI PHẠM: ...`) bằng tiếng Việt có dấu trực tiếp trên khung hình.
 
 ---
 
-## 📂 Cấu Trúc Thư Mục Dự Án
+## Cấu Trúc Thư Mục
 
 ```text
 Uniform_Student/
-├── main.py                     # Pipeline chạy thời gian thực chính
-├── .env                        # File cấu hình môi trường bảo mật (webcam, IoT...)
-├── .env.example                # File mẫu để khởi tạo .env
-├── Train_YOLO11_Colab.ipynb    # Notebook dùng để train YOLO11m trên Google Colab
+├── main.py                     # Chương trình chạy chính thức (Camera + Tracking + OhStem)
+├── .env                        # Cấu hình môi trường (tạo từ .env.example)
+├── .env.example                # File cấu hình mẫu
+├── requirements.txt            # Danh sách thư viện Python
+├── Train_YOLO11_Colab.ipynb    # Notebook huấn luyện YOLO11m trên Google Colab
 ├── config/
-│   └── settings.yaml           # Các tham số cài đặt tỷ lệ cơ thể và số frame xác nhận
+│   └── settings.yaml           # Tham số quy tắc đồng phục và tracking
 ├── data/
-│   ├── dataset.yaml            # Cấu hình đường dẫn dataset Roboflow
-│   ├── violations/             # Thư mục tự động lưu ảnh khi có vi phạm đồng phục
-│   └── test_results/           # Thư mục tự động lưu ảnh/video đầu ra sau khi test
+│   ├── dataset.yaml            # Cấu hình đường dẫn dataset
+│   ├── violations/             # Tự động lưu ảnh bằng chứng khi có vi phạm
+│   └── test_results/           # Lưu ảnh/video kết quả khi chạy script kiểm thử
 ├── models/
-│   └── best_uniform_model.pt   # File trọng số (weights) đã được huấn luyện thành công
+│   └── best_uniform_model.pt   # Trọng số mô hình YOLO11m đã huấn luyện
 ├── scripts/
-│   ├── test_image.py           # Script chuyên dụng kiểm thử nhanh một file hình ảnh
-│   ├── test_media.py           # Script kiểm thử đa năng (hỗ trợ cả ảnh và video)
-│   ├── run_video.py            # Script chạy thử trên video không tải IoT
-│   └── train.py                # Script chạy huấn luyện mô hình local (nếu dùng máy có GPU)
+│   ├── stream_test.py          # Quét cổng camera & test luồng stream trực tiếp
+│   ├── test_image.py           # Kiểm thử nhanh trên 1 file ảnh
+│   ├── test_media.py           # Kiểm thử trên ảnh hoặc video
+│   ├── run_video.py            # Chạy thử trên file video không kết nối IoT
+│   ├── train.py                # Huấn luyện mô hình trên máy có GPU
+│   └── export_tensorrt.py      # Xuất model sang TensorRT (.engine) cho Jetson/NVIDIA
 └── src/
-    ├── camera.py               # Quản lý luồng đọc Camera đa luồng (Multi-threading)
-    ├── detector.py             # Lớp đóng gói YOLO và dự đoán đối tượng
-    ├── violation_checker.py    # Logic kiểm tra luật đồng phục học sinh
-    ├── ohstem_service.py       # Dịch vụ truyền thông điệp MQTT lên OhStem IoT
+    ├── camera.py               # Đọc luồng camera đa luồng (USB / RTSP / Video lặp)
     ├── config_loader.py        # Đọc cấu hình từ .env và settings.yaml
-    └── visualize.py            # Vẽ nhãn nhận diện và chữ Tiếng Việt Unicode sắc nét
+    ├── detector.py             # Wrapper YOLO11m hỗ trợ predict & track
+    ├── tracker_history.py      # Logic bám vết và đánh giá đồng phục theo thời gian
+    ├── violation_checker.py    # Logic kiểm tra vi phạm đồng phục
+    ├── ohstem_service.py       # Kết nối MQTT gửi dữ liệu lên OhStem
+    ├── debounce.py             # Bộ đếm frame chống nhiễu
+    ├── geometry.py             # Tính toán IoU và vị trí bbox
+    └── visualize.py            # Vẽ bounding box và chữ Tiếng Việt Unicode
 ```
 
 ---
 
-## 🛠️ Cài Đặt Dưới Local
+## Cài Đặt Môi Trường
 
-### 1. Chuẩn bị môi trường Python
+### 1. Tạo môi trường ảo Python
 ```bash
-# Kích hoạt môi trường ảo Python
 python -m venv .venv
 
 # Windows:
 .venv\Scripts\activate
 
-# Linux/MacOS:
+# Linux / macOS:
 source .venv/bin/activate
 ```
 
-### 2. Cài đặt các thư viện cần thiết
+### 2. Cài đặt thư viện
 ```bash
 pip install -r requirements.txt
 pip install paho-mqtt
 ```
 
-### 3. Khởi tạo cấu hình hệ thống
-Sao chép file cấu hình mẫu để tạo file `.env`:
-```bash
-copy .env.example .env
+### 3. Tạo file cấu hình `.env`
+Copy từ file mẫu `.env.example` sang `.env` và chỉnh sửa các thông số phù hợp:
+
+```env
+# Camera: 0 hoặc 1 tùy thứ tự cổng USB, hoặc URL rtsp:// / http://
+CAMERA_SOURCE=0
+CAMERA_WIDTH=1080
+CAMERA_HEIGHT=1920
+
+# Mô hình & ngưỡng nhận diện
+MODEL_PATH=models/best_uniform_model.pt
+CONFIDENCE_THRESHOLD=0.35
+IOU_THRESHOLD=0.45
+
+# Kích thước suy luận (640 nhanh hơn trên CPU; 960/1280 bắt vật thể nhỏ tốt hơn)
+IMGSZ=640
+
+# Khoảng cách tối thiểu (chiều cao bbox học sinh theo px) để kích hoạt kiểm tra
+MIN_STUDENT_HEIGHT=250
+
+# Yêu cầu khăn quàng đỏ (true: Cấp 1, 2; false: Cấp 3)
+REQUIRE_SCARF=false
+
+# Hiển thị cửa sổ xem trước
+SHOW_PREVIEW=true
+
+# Tích hợp OhStem IoT
+OHSTEM_USERNAME=your_ohstem_username
+OHSTEM_PASSWORD=
+OHSTEM_FEED_ID=V1
+ENABLE_OHSTEM=false
 ```
-Mở file `.env` ra để cập nhật nguồn camera và tài khoản OhStem (nếu sử dụng).
 
 ---
 
-## 🤖 Huấn Luyện (Training) Trên Google Colab
+## Hướng Dẫn Sử Dụng
 
-Dự án đã chuẩn bị sẵn file [Train_YOLO11_Colab.ipynb](file:///c:/Users/DELL/OneDrive%20-%20Hanoi%20University%20of%20Science%20and%20Technology/Desktop/Uniform_Student/Train_YOLO11_Colab.ipynb) được cấu hình tối ưu để bạn có thể import thẳng lên Google Colab và huấn luyện bằng GPU miễn phí:
+### Bước 1: Quét kiểm tra cổng Camera
+Chạy lệnh sau để xem danh sách các camera đang kết nối với máy tính (`0`, `1`, `2`...):
+```bash
+python scripts/stream_test.py --scan
+```
 
-1. Truy cập [Google Colab](https://colab.research.google.com/).
-2. Chọn tab **Upload** và tải lên file [Train_YOLO11_Colab.ipynb](file:///c:/Users/DELL/OneDrive%20-%20Hanoi%20University%20of%20Science%20and%20Technology/Desktop/Uniform_Student/Train_YOLO11_Colab.ipynb).
-3. Đổi loại thời gian chạy thành **T4 GPU** (Runtime -> Change runtime type -> T4 GPU).
-4. Nhấn **Run All** (`Ctrl + F9`). Notebook đã được tích hợp mã vá lỗi đường dẫn động (Dynamic Path Scanner) và điền sẵn mã tài khoản Roboflow của bạn, quá trình tải và train sẽ diễn ra tự động 100%.
-5. Khi train xong, trình duyệt sẽ tự động tải file `best.pt` về máy tính. Bạn hãy đổi tên nó thành `best_uniform_model.pt` rồi copy vào thư mục `models/` trong dự án.
+### Bước 2: Chạy Stream Test (Webcam máy tính hoặc Camera ngoài)
 
----
+* **Chạy trên Webcam tích hợp của máy tính** (khi không cắm cam ngoài, mặc định là Index `0`):
+  ```bash
+  python scripts/stream_test.py --source 0 --ai
+  ```
 
-## 📡 Kết Nối Điểm Danh Lên OhStem IoT Panel
+* **Chạy trên Camera ngoài USB (độ phân giải dọc `1080x1920`)**:
+  ```bash
+  python scripts/stream_test.py --source 1 --width 1080 --height 1920 --ai
+  ```
+  *(Lưu ý: Trên Windows, khi cắm camera ngoài qua USB, hệ điều hành có thể tự đảo thứ tự cổng — đẩy camera ngoài lên `--source 0` và webcam laptop xuống `--source 1`. Nếu thấy `--source 1` ra webcam máy tính thì đổi lại `--source 0`)*
 
-Để kết nối điểm danh sĩ số học sinh lên Dashboard của OhStem thời gian thực:
+* **Chạy giả lập từ file video hoặc camera IP (RTSP/HTTP)**:
+  ```bash
+  python scripts/stream_test.py --source "duong_dan_video.mp4" --ai
+  python scripts/stream_test.py --source "http://192.168.1.X:4747/video" --ai
+  ```
 
-1. Mở file [.env](file:///c:/Users/DELL/OneDrive%20-%20Hanoi%20University%20of%20Science%20and%20Technology/Desktop/Uniform_Student/.env).
-2. Kích hoạt tính năng bằng cách đổi `ENABLE_OHSTEM=false` thành `ENABLE_OHSTEM=true`.
-3. Điền tên đăng nhập tài khoản của bạn:
-   ```env
-   OHSTEM_USERNAME=tên_đăng_nhập_ohstem_của_bạn
-   OHSTEM_FEED_ID=V1   # Kênh dashboard tương ứng nhận dữ liệu sĩ số
-   ```
+**Phím tắt khi đang mở cửa sổ:**
+* `Space`: Bật / Tắt nhận diện AI.
+* `S`: Chụp và lưu ảnh khung hình hiện tại vào `data/test_results/`.
+* `Q`: Thoát.
 
----
-
-## 🚀 Cách Chạy Ứng Dụng
-
-### 1. Chạy Luồng Chính Real-time (Webcam / Camera trường học):
+### Bước 3: Chạy hệ thống chính thức
+Sau khi xác định đúng cổng camera (`0` hoặc `1`), cập nhật `CAMERA_SOURCE=` trong `.env` rồi chạy:
 ```bash
 python main.py
 ```
-* **Phát hiện vi phạm**: Log sẽ được in gọn gàng ra màn hình console và lưu hình ảnh minh chứng có gán nhãn thời gian vào thư mục `data/violations/`.
-* **Điểm danh**: Tự động đếm sĩ số học sinh thực tế trong khung hình và truyền trực tiếp lên Dashboard OhStem.
-* Nhấn phím **`q`** để thoát an toàn.
 
-### 2. Kiểm thử nhanh file HÌNH ẢNH:
+### Kiểm thử nhanh với ảnh hoặc video có sẵn
 ```bash
-python scripts/test_image.py "đường_dẫn_tới_ảnh.jpg"
+# Test với ảnh
+python scripts/test_image.py path/to/image.jpg
 
-# Hoặc lưu lại ảnh kết quả sau nhận diện:
-python scripts/test_image.py "đường_dẫn_tới_ảnh.jpg" --save
+# Test với video (tự động lưu kết quả ra data/test_results/)
+python scripts/test_media.py path/to/video.mp4
 ```
-
-### 3. Kiểm thử nhanh file VIDEO:
-```bash
-python scripts/test_media.py "đường_dẫn_tới_video.mp4"
-
-# Hoặc lưu lại video kết quả sau nhận diện:
-python scripts/test_media.py "đường_dẫn_tới_video.mp4" --save
-```
-
----
-
-## 📝 Quy Tắc Phát Hiện Vi Phạm Đồng Phục
-* **Vi phạm khăn quàng đỏ**: Nếu phát hiện vùng cơ thể `hoc_sinh` nhưng không tìm thấy `khan_quang` ở vùng thân trên (tỷ lệ 0.55 chiều cao bounding box).
-* **Vi phạm bảng tên**: Nếu phát hiện `hoc_sinh` nhưng không tìm thấy `bang_ten` hoặc `the_ten` ở vùng thân trên.
-* **Vi phạm màu sắc quần áo**:
-  * Phát hiện nhãn `quan_sai_mau` hoặc `ao_sai_mau` chồng đè lên cơ thể học sinh.
-  * Hoặc thiếu các nhãn đồng phục cơ bản như `ao_trang` hoặc `quan_xanh` trên vùng cơ thể học sinh.

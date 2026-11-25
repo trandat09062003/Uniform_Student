@@ -20,9 +20,10 @@ from src.camera import CameraStream
 from src.config_loader import load_config
 from src.debounce import FrameViolationCounter
 from src.detector import UniformDetector
-from src.visualize import draw_violations
+from src.visualize import draw_tracking_hud, draw_violations
 from src.violation_checker import Violation, ViolationChecker
 from src.ohstem_service import OhstemService
+from src.tracker_history import StudentTemporalTracker
 
 CONSOLE_COOLDOWN_SECONDS = 5.0  # Khoảng cách tối thiểu giữa 2 lần in cảnh báo cùng một lỗi
 _last_printed: dict[str, float] = {}
@@ -79,8 +80,17 @@ def main() -> None:
         model_path=str(cfg.model_path),
         confidence=cfg.confidence,
         iou=cfg.iou,
+        imgsz=cfg.imgsz,
     )
     checker = ViolationChecker(
+        upper_body_ratio=cfg.upper_body_ratio,
+        overlap_iou_threshold=cfg.overlap_iou_threshold,
+    )
+    temporal_tracker = StudentTemporalTracker(
+        min_student_height=cfg.min_student_height,
+        min_track_frames=cfg.min_track_frames,
+        item_confirm_count=cfg.item_confirm_count,
+        require_scarf=cfg.require_scarf,
         upper_body_ratio=cfg.upper_body_ratio,
         overlap_iou_threshold=cfg.overlap_iou_threshold,
     )
@@ -101,13 +111,26 @@ def main() -> None:
         else:
             print("[Ohstem] Lỗi: ENABLE_OHSTEM=true nhưng OHSTEM_USERNAME để trống.")
 
-    print(f"[OK] Khởi động mô hình: {cfg.model_path.name}")
+    print(f"[OK] Khởi động mô hình: {cfg.model_path.name} (imgsz={cfg.imgsz})")
     print(f"[OK] Nguồn camera: {cfg.camera_source}")
+    print(f"[OK] Cấu hình Nhóm 1: min_height={cfg.min_student_height}px, min_frames={cfg.min_track_frames}, require_scarf={cfg.require_scarf}")
+    if cfg.camera_width and cfg.camera_height:
+        print(f"[OK] Cấu hình độ phân giải yêu cầu: {cfg.camera_width}x{cfg.camera_height}")
     print("Nhấn phím 'q' để thoát ứng dụng.")
 
-    stream = CameraStream(cfg.camera_source).start()
+    stream = CameraStream(
+        cfg.camera_source,
+        width=cfg.camera_width,
+        height=cfg.camera_height,
+    ).start()
+
+    window_name = "True Form Student - Realtime Detection"
+    window_initialized = False
+
     fps_time = time.time()
     frame_count = 0
+    last_mqtt_time = 0.0
+    last_student_count = -1
 
     try:
         while True:
@@ -116,31 +139,42 @@ def main() -> None:
                 print("[Camera] Mất tín hiệu frame, đang thử lại...")
                 continue
 
-            detections = detector.predict(frame)
+            if cfg.show_preview and not window_initialized:
+                cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+                h, w = frame.shape[:2]
+                if h > 900:
+                    scale = 800.0 / h
+                    cv2.resizeWindow(window_name, int(w * scale), 800)
+                window_initialized = True
 
-            # Tích hợp điểm danh gửi lên OhStem
-            if ohstem_service:
-                # Đếm số lượng nhãn học sinh
-                student_count = sum(1 for d in detections if d.class_name == "hoc_sinh")
+            # Suy luận kèm bám vết (Multi-Object Tracking - Group 1)
+            detections = detector.track(frame, persist=True)
+            student_histories = temporal_tracker.update(detections)
+
+            # Tích hợp điểm danh gửi lên OhStem (tối ưu: gửi định kỳ mỗi 3s hoặc khi sĩ số thay đổi)
+            now = time.time()
+            student_count = sum(1 for d in detections if d.class_name == "hoc_sinh")
+            if ohstem_service and (now - last_mqtt_time >= 3.0 or student_count != last_student_count):
                 ohstem_service.send_attendance_count(student_count)
+                last_mqtt_time = now
+                last_student_count = student_count
 
-            violations = checker.check(detections)
-            if not violations:
-                violations = checker.check_frame_level(detections)
+            # Vẽ kết quả hiển thị kèm huy hiệu đánh giá thời gian thực
+            annotated = draw_tracking_hud(frame, detections, student_histories)
 
-            annotated = draw_violations(frame, violations, detections)
-
-            if violations:
-                process_violations(
-                    frame,
-                    violations,
-                    annotated,
-                    cfg,
-                    frame_counter,
-                )
-            else:
-                for key in list(frame_counter._counts.keys()):
-                    frame_counter.tick(key, False)
+            # Ghi nhận cảnh báo từ các học sinh đã xác nhận vi phạm
+            for tid, hist in student_histories.items():
+                if hist.is_confirmed and hist.violations:
+                    key = f"track_{tid}"
+                    last = _last_printed.get(key, 0.0)
+                    if (now - last) >= CONSOLE_COOLDOWN_SECONDS:
+                        print(f"⚠️ [CẢNH BÁO NHÓM 1 - #{tid}] {hist.status}")
+                        if cfg.save_violation_images:
+                            ts = int(time.time())
+                            save_path = cfg.violations_dir / f"VIOLATION_STUDENT_{tid}_{ts}.jpg"
+                            cv2.imwrite(str(save_path), annotated)
+                            print(f"[LƯU TRỮ] Đã ghi nhận ảnh vi phạm: {save_path}")
+                        _last_printed[key] = now
 
             frame_count += 1
             if frame_count % 30 == 0:
@@ -158,7 +192,7 @@ def main() -> None:
                 )
 
             if cfg.show_preview:
-                cv2.imshow("True Form Student - Realtime Detection", annotated)
+                cv2.imshow(window_name, annotated)
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
 

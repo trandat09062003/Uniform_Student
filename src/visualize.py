@@ -69,7 +69,17 @@ def draw_text_unicode(
 
 def draw_detections(frame: np.ndarray, detections: list[Detection]) -> np.ndarray:
     out = frame.copy()
+    students = [d for d in detections if d.class_name == "hoc_sinh"]
+
     for d in detections:
+        # Chỉ vẽ các item đồng phục nếu có ít nhất 1 học sinh và tâm item nằm trong khung học sinh
+        if d.class_name != "hoc_sinh":
+            if not students:
+                continue
+            cx, cy = d.center
+            if not any(s.x1 - 15 <= cx <= s.x2 + 15 and s.y1 - 15 <= cy <= s.y2 + 15 for s in students):
+                continue
+
         color = COLORS.get(d.class_name, (200, 200, 200))
         x1, y1, x2, y2 = map(int, d.bbox)
         cv2.rectangle(out, (x1, y1), (x2, y2), color, 2)
@@ -87,10 +97,55 @@ def draw_detections(frame: np.ndarray, detections: list[Detection]) -> np.ndarra
         elif display_name == "hoc_sinh":
             display_name = "học sinh"
 
-        label = f"{display_name} {d.confidence:.2f}"
+        if d.track_id is not None and d.class_name == "hoc_sinh":
+            label = f"#{d.track_id} {display_name} {d.confidence:.2f}"
+        else:
+            label = f"{display_name} {d.confidence:.2f}"
         
         # Vẽ nhãn bằng tiếng Việt Unicode
-        out = draw_text_unicode(out, label, (x1, max(y1 - 20, 5)), color, font_size=14)
+        out = draw_text_unicode(out, label, (x1, max(y1 - 22, 5)), color, font_size=14)
+    return out
+
+
+def draw_tracking_hud(
+    frame: np.ndarray,
+    detections: list[Detection],
+    student_histories: dict,
+) -> np.ndarray:
+    """Vẽ nhãn nhận diện kèm huy hiệu trạng thái đánh giá đồng phục (Group 1 Voting) trên đầu học sinh."""
+    out = draw_detections(frame, detections)
+    students = [d for d in detections if d.class_name == "hoc_sinh"]
+
+    for s in students:
+        tid = s.track_id if s.track_id is not None else 1
+        hist = student_histories.get(tid)
+        if not hist:
+            continue
+
+        x1, y1, x2, y2 = map(int, s.bbox)
+
+        # Quyết định màu sắc huy hiệu theo trạng thái
+        if "ĐỦ ĐỒNG PHỤC" in hist.status:
+            badge_color = (0, 255, 0)      # Xanh lá
+            bg_color = (0, 100, 0)
+            badge_text = f"[#{tid}] ĐỦ ĐỒNG PHỤC"
+        elif "VI PHẠM" in hist.status:
+            badge_color = (0, 0, 255)      # Đỏ
+            bg_color = (0, 0, 120)
+            badge_text = f"[#{tid}] {hist.status}"
+        elif "CHƯA ĐỦ GẦN" in hist.status:
+            badge_color = (180, 180, 180)  # Xám
+            bg_color = (50, 50, 50)
+            badge_text = f"[#{tid}] CHƯA ĐỦ GẦN"
+        else:
+            badge_color = (0, 255, 255)    # Vàng
+            bg_color = (120, 120, 0)
+            badge_text = f"[#{tid}] {hist.status}"
+
+        # Vẽ huy hiệu nổi bật phía trên đầu học sinh
+        badge_pos = (x1, max(y1 - 45, 10))
+        out = draw_text_unicode(out, badge_text, badge_pos, badge_color, font_size=15, bg_color=bg_color)
+
     return out
 
 

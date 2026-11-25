@@ -20,3 +20,19 @@ violation_confirm_frames: 5
 # Lưu ảnh vi phạm local
 save_violation_images: true
 violations_dir: data/violations
+
+# === NHÓM 1: CÁC THAM SỐ NÂNG ĐỘ CHÍNH XÁC LÊN 90-95% ===
+# Kích thước suy luận YOLO (960 hoặc 1280 giúp nhận diện bảng tên nhỏ sắc nét)
+imgsz: 960
+
+# Cổng lọc khoảng cách (Distance Gate): Bỏ qua học sinh ở quá xa (chiều cao bbox < 250px)
+min_student_height: 250.0
+
+# Số frame bám vết tối thiểu trước khi chốt kết luận
+min_track_frames: 8
+
+# Số frame tối thiểu nhìn thấy vật thể (áo/quần/thẻ tên/khăn) để xác nhận học sinh ĐÃ MẶC
+item_confirm_count: 3
+
+# Yêu cầu khăn quàng đỏ (Cấp 1 & 2: true, Cấp 3: false)
+require_scarf: true
