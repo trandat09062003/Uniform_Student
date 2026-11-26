@@ -153,7 +153,13 @@ python scripts/stream_test.py --scan
   ```
   *(Lưu ý: Trên Windows, khi cắm camera ngoài qua USB, hệ điều hành có thể tự đảo thứ tự cổng — đẩy camera ngoài lên `--source 0` và webcam laptop xuống `--source 1`. Nếu thấy `--source 1` ra webcam máy tính thì đổi lại `--source 0`)*
 
-* **Chạy giả lập từ file video hoặc camera IP (RTSP/HTTP)**:
+* **Chạy trên Camera IP WiFi (Yoosee / RTSP)**:
+  ```bash
+  python scripts/stream_test.py --source "rtsp://admin:MAT_KHAU@192.168.0.12:554/onvif2" --ai
+  ```
+  *(Lưu ý: Dùng `/onvif2` để luồng nhẹ và mượt hơn; nếu mật khẩu có ký tự `@` thì viết thành `%40`, ví dụ `pass%40123`)*
+
+* **Chạy giả lập từ file video hoặc camera điện thoại (DroidCam/HTTP)**:
   ```bash
   python scripts/stream_test.py --source "duong_dan_video.mp4" --ai
   python scripts/stream_test.py --source "http://192.168.1.X:4747/video" --ai
