@@ -35,11 +35,13 @@ class CameraStream:
             self._cap = cv2.VideoCapture(self.source, cv2.CAP_DSHOW)
             if not self._cap.isOpened():
                 self._cap = cv2.VideoCapture(self.source)
+        elif isinstance(self.source, str) and self.source.startswith("rtsp"):
+            import os
+            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
+            self._cap = cv2.VideoCapture(self.source, cv2.CAP_FFMPEG)
+            self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         else:
             self._cap = cv2.VideoCapture(self.source)
-
-        if isinstance(self.source, str) and self.source.startswith("rtsp"):
-            self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
         if not self._cap.isOpened():
             raise RuntimeError(f"Không mở được nguồn camera: {self.source}")
